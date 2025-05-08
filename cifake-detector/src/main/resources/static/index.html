@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>CI Fake Detector</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="container" id="app">
+    <header>
+      <h1>CI Fake Detector</h1>
+      <button id="themeToggle">🌙 Dark</button>
+    </header>
+
+    <form id="predictForm">
+      <label for="fileInput">
+        Choose file:
+        <input type="file" id="fileInput" name="file" accept="image/*" />
+      </label>
+      <label for="urlInput">
+        Or enter URL:
+        <input
+          type="text"
+          id="urlInput"
+          name="imageUrl"
+          placeholder="https://..."
+          aria-label="Image URL"
+        />
+      </label>
+      <button type="submit">Predict</button>
+    </form>
+
+    <div id="result" class="result" hidden>
+      <p id="resultText"></p>
+      <div class="confidence-bar"><div id="resultBar"></div></div>
+      <p class="small">The percentage shows the model’s confidence in its top prediction.</p>
+    </div>
+
+    <div class="history">
+      <h2>Recent Predictions</h2>
+      <div id="historyList"></div>
+    </div>
+  </div>
+
+  <script>
+    // theme toggle (same as before)...
+    const themeToggle = document.getElementById('themeToggle');
+    const stored = localStorage.getItem('theme') || 'light';
+    document.documentElement.setAttribute('data-theme', stored);
+    themeToggle.textContent = stored === 'light' ? '🌙 Dark' : '☀️ Light';
+    themeToggle.onclick = () => {
+      const newTheme = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-theme', newTheme);
+      localStorage.setItem('theme', newTheme);
+      themeToggle.textContent = newTheme === 'light' ? '🌙 Dark' : '☀️ Light';
+    };
+
+    // history utils (same)...
+    const HISTORY_KEY = 'ciFakeHistory';
+    function loadHistory() {
+      return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+    }
+    function saveHistory(h) {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(0, 10)));
+    }
+    function renderHistory() {
+      const container = document.getElementById('historyList');
+      container.innerHTML = '';
+      loadHistory().forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'history-item';
+        div.innerHTML = `
+          <strong>${item.prediction}</strong>
+          <span class="small">(${(item.prob*100).toFixed(2)}%)</span><br/>
+          <span class="small">${new Date(item.time).toLocaleString()}</span>
+        `;
+        container.appendChild(div);
+      });
+    }
+    renderHistory();
+
+    // form handler (same)
+    const form = document.getElementById('predictForm');
+    const fileInput = document.getElementById('fileInput');
+    const urlInput = document.getElementById('urlInput');
+    const resultDiv = document.getElementById('result');
+    const resultText = document.getElementById('resultText');
+    const resultBar = document.getElementById('resultBar');
+
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+      resultDiv.hidden = true;
+      let endpoint = '/api/predict-file';
+      let body = new FormData();
+      if (fileInput.files.length) {
+        body = new FormData();
+        body.append('file', fileInput.files[0]);
+      } else if (urlInput.value.trim()) {
+        endpoint = '/api/predict?imageUrl=' + encodeURIComponent(urlInput.value.trim());
+        body = null;
+      } else {
+        alert('Please choose a file or enter a URL.');
+        return;
+      }
+
+      resultText.textContent = '⏳ Predicting…';
+      resultBar.style.width = '0%';
+      resultDiv.hidden = false;
+
+      try {
+        const resp = await fetch(endpoint, {
+          method: body ? 'POST' : 'GET',
+          body: body
+        });
+        const txt = await resp.text();
+        const match = txt.match(/🔍\s*(.+)\s*\(([\d.]+)%\)/);
+        if (!match) throw new Error(txt);
+        const label = match[1], p = parseFloat(match[2]) / 100;
+        resultText.textContent = label + ` (${(p*100).toFixed(2)}%)`;
+        resultBar.style.width = (p*100) + '%';
+
+        const hist = loadHistory();
+        hist.unshift({prediction: label, prob: p, time: Date.now()});
+        saveHistory(hist);
+        renderHistory();
+
+      } catch (err) {
+        resultText.textContent = '❌ ' + err.message;
+        resultBar.style.width = '0%';
+        resultDiv.hidden = false;
+      }
+    });
+  </script>
+</body>
+</html>

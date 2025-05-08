@@ -42,4 +42,13 @@ public class PredictionController {
         }
         try {
             Image img = ImageFactory.getInstance().fromInputStream(file.getInputStream());
-            try (Predictor<Image, Classificat
+            try (Predictor<Image, Classifications> p = model.newPredictor()) {
+                var best = p.predict(img).best();
+                return String.format("🔍 %s (%.2f%%)",
+                        best.getClassName(), best.getProbability() * 100);
+            }
+        } catch (Exception e) {
+            return "❌ Error: " + e.getMessage();
+        }
+    }
+}
